@@ -215,6 +215,16 @@ legend { padding: 0 6px; }
 .import-bad { border-color: var(--bad); color: var(--bad); }
 .import-ok p, .import-ok ul { margin: 0 0 4px; }
 progress { width: 100%; }
+.columns-box, .preview-box { margin-top: 8px; }
+.columns-box summary, .preview-box summary { cursor: pointer; color: var(--accent); }
+.columns-box .field { margin: 10px 0; }
+.columns-box .field > span { min-width: 0; }
+.columns { display: grid; grid-template-columns: repeat(auto-fill, minmax(210px, 1fr)); gap: 10px; }
+.column { display: grid; gap: 3px; align-content: start; min-width: 0; }
+.column select { width: 100%; min-width: 0; }
+.column span { font-size: .9em; overflow-wrap: anywhere; }
+.preview-list { max-height: 320px; overflow: auto; margin-top: 8px; }
+.import-bad .columns-box { color: var(--ink); }
 
 /* question */
 .paper, .question-pane, .case-pane { background: var(--paper); padding: 16px 20px; overflow: auto; }

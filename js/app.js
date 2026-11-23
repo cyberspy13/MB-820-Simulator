@@ -153,7 +153,7 @@
           }))), body))
       : h('div', { class: 'empty' },
           h('h2', { text: 'No questions yet' }),
-          h('p', { text: 'Upload a PDF or text file with questions, or try the built-in samples first.' }),
+          h('p', { text: 'Upload questions from a PDF, Word, Excel or other file, or try the built-in samples first.' }),
           h('div', { class: 'row' },
             button('Upload questions', function () { upload(); }, { class: 'btn primary' }),
             button('Load samples', async function () { library((await Sim.importer.addSamples()).id); })));

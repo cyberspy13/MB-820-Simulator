@@ -14,14 +14,21 @@
   <h1>Simulator checks</h1>
   <p id="sum">The checks did not run. A script failed to load.</p>
   <div id="out"></div>
+  <script src="../js/layout.js"></script>
   <script src="../js/parser.js"></script>
   <script src="../js/pdfread.js"></script>
+  <script src="../js/zip.js"></script>
+  <script src="../js/tables.js"></script>
+  <script src="../js/office.js"></script>
+  <script src="../js/richtext.js"></script>
+  <script src="../js/legacy.js"></script>
   <script src="../js/engine.js"></script>
   <script src="../js/store.js"></script>
   <script src="../js/samples.js"></script>
   <script src="../js/dom.js"></script>
   <script src="../js/question.js"></script>
   <script src="../js/calculator.js"></script>
+  <script src="../js/templates.js"></script>
   <script src="../js/importer.js"></script>
   <script>
     'use strict';
@@ -280,12 +287,119 @@
       same([tryIt('{'), tryIt('{"format":"other"}'), tryIt('{"format":"mb820-exam-simulator","questions":[{"type":"choice"}]}')], ['refused', 'refused', 'refused']);
     });
 
+    /* layouts people use */
+    const brief = (q) => q.options.map((o) => (q.answer.includes(o.key) ? '*' : '') + o.text).join('|');
+    const briefs = (t) => parseText(t).questions.map((q) => q.options ? brief(q) : q.type);
+    test('numbered questions with lower-case choices', () => {
+      same(briefs('1. First?\na) x\nb) y\nAnswer: b\n2) Second?\na. p\nb. q\nAns: A'), ['x|*y', '*p|q']);
+    });
+    test('Q1 style, text on the header line, and "Question 1 of 5"', () => {
+      same(briefs('Q1. First?\nA) x\nB) y\nCorrect answer is B\nQ2: Second?\nA) p\nB) q\nCorrect: A'), ['x|*y', '*p|q']);
+      const q = parseText('Question 1 of 2: What is it?\nA. x\nB. y\nAnswer: A\nQuestion 2 - And this?\nA. x\nB. y\nAnswer: B').questions;
+      same(q.map((x) => x.stem[0].text), ['What is it?', 'And this?']);
+    });
+    test('a numbered list inside a question stays in it', () => {
+      const q = parseText('1. Do these steps:\n1. open\n2. close\nWhat happens?\nA. x\nB. y\nAnswer: A\n2. Next?\nA. x\nB. y\nAnswer: B').questions;
+      same([q.length, q[0].stem.length], [2, 4]);
+    });
+    test('a numbered list in an explanation stays in it', () => {
+      const q = parseText('1. First?\nA. x\nB. y\nAnswer: A\nExplanation:\n1. because\n2. also\n2. Next?\nA. x\nB. y\nAnswer: B\n3. Last?\nA. x\nB. y\nAnswer: B').questions;
+      same(q.map((x) => [x.num, x.stem.map((s) => s.text).join(' '), x.explanation.length]), [[1, 'First?', 2], [2, 'Next?', 0], [3, 'Last?', 0]]);
+    });
+    test('no numbers at all, with and without blank lines', () => {
+      same(briefs('First?\nA. x\nB. y\nANSWER: A\nSecond?\nA. p\nB. q\nANSWER: B'), ['*x|y', 'p|*q']);
+      same(briefs('First?\n\nA. x\nB. y\n\nAnswer: A\nExplanation: why\n\nSecond?\nMore.\nA. p\nB. q\nAnswer: B'), ['*x|y', 'p|*q']);
+    });
+    test('answers as text, as letter and text, and several', () => {
+      same(briefs('Question 1\nx\nA. red\nB. blue\nAnswer: blue\nQuestion 2\nx\nA. red\nB. blue\nAnswer: B. blue\nQuestion 3\nx\nA. red\nB. blue\nC. grey\nAnswer:\nA. red\nC. grey\nQuestion 4\nx\nA. red\nB. blue\nAnswer: Option B'),
+        ['red|*blue', 'red|*blue', '*red|blue|*grey', 'red|*blue']);
+    });
+    test('marked answers: stars, ticks, (correct), tick boxes', () => {
+      same(briefs('Q1. x\n*A. one\nB. two\nQ2. x\nA. one\nB. two (correct)\nQ3. x\n[x] one\n[ ] two\n[x] three\nQ4. x\nA. one ✓\nB. two'),
+        ['*one|two', 'one|*two', '*one|two|*three', '*one|two']);
+    });
+    test('bold or highlighted answers', () => {
+      const r = P.parse([{ k: 'p', text: '1. Pick' }, { k: 'p', text: 'A. one' }, { k: 'p', text: 'B. two', bold: true },
+        { k: 'p', text: '2. Pick' }, { k: 'p', text: 'A. one', bold: true, highlight: true }, { k: 'p', text: 'B. two', bold: true }]);
+      same(r.questions.map(brief), ['one|*two', '*one|two']);
+    });
+    test('an answer key at the end', () => {
+      same(briefs('1. First?\nA. x\nB. y\n2. Second?\nA. p\nB. q\nC. r\nAnswer key\n1. B 2. A, C'), ['x|*y', '*p|q|*r']);
+    });
+    test('true or false, numbered choices, unlabelled choices, choices on one line', () => {
+      same(briefs('Question 1\nIt works.\nAnswer: False'), ['True|*False']);
+      same(briefs('Question 1\nPick?\n1) red\n2) blue\nAnswer: 2'), ['red|*blue']);
+      same(briefs('Question 1\nWhich colour?\nred\nblue\nAnswer: blue'), ['red|*blue']);
+      same(briefs('Question 1\nWhich?\nA. red    B. blue    C. grey\nAnswer: C'), ['red|blue|*grey']);
+    });
+    test('sections named in the file', () => {
+      same(parseText('Topic 1: Tables\nQuestion 1\nx\nA. a\nB. b\nAnswer: A\nTopic 2: Pages\nQuestion 2\nx\nA. a\nB. b\nAnswer: A').questions.map((q) => q.section), ['Tables', 'Pages']);
+    });
+
+    /* rows */
+    const rowsOf = (list) => list.map((r) => r.map((t) => ({ text: t, imgs: [], bold: false, highlight: false })));
+    const fromTable = (list) => { const t = { rows: rowsOf(list) }; return Sim.tables.toQuestions(t, Sim.tables.plan(t.rows)); };
+    test('column headings are recognised', () => {
+      same(['Question Text', 'Option A', 'Choice 2', 'Correct Answer(s) - pick one', 'Rationale', 'Topic', 'No.', 'Wrong answer 1', 'Answer 3', 'Answer', 'Cost'].map(Sim.tables.roleOf),
+        ['question', 'option', 'option', 'correct', 'explanation', 'section', 'number', 'option', 'option', 'correct', '']);
+    });
+    test('answers by letter, position and text', () => {
+      same(fromTable([['Question', 'A', 'B', 'C', 'Answer'], ['q', 'x', 'y', 'z', 'B'], ['q', 'x', 'y', 'z', '1,3'], ['q', 'x', 'y', 'z', 'z'], ['q', '2', '3', '4', '3'], ['q', 'x', 'y', 'z', 'a and c']]).map(brief),
+        ['x|*y|z', '*x|y|*z', 'x|y|*z', '2|*3|4', '*x|y|*z']);
+    });
+    test('an answer that fits no choice is left for the candidate', () => {
+      const q = fromTable([['Question', 'A', 'B', 'Answer'], ['q one', 'x', 'y', 'F'], ['q two', 'x', 'y', 'A']]);
+      same(q.map((x) => x.type), ['self', 'choice']);
+    });
+    test('one choice per row', () => {
+      same(fromTable([['Question', 'Option', 'Is correct'], ['a?', 'x', 'TRUE'], ['', 'y', 'FALSE'], ['b?', 'x', 'FALSE'], ['b?', 'y', 'TRUE']]).map(brief), ['*x|y', 'x|*y']);
+    });
+    test('matching and ordering in a cell', () => {
+      const q = fromTable([['Question', 'Answer', 'Type'], ['Match', 'a -> 1\nb -> 2', 'Match'], ['Sort', 'one\ntwo', 'Order']]);
+      same([q[0].type, q[0].rows.map((r) => r.answer), q[1].type, q[1].items], ['match', ['1', '2'], 'order', ['one', 'two']]);
+    });
+    test('CSV: quotes, line breaks, semicolons, tabs', () => {
+      const t = (s) => Sim.tables.csv(s).map((r) => r.map((c) => c.text));
+      same(t('a,b\n"x, ""y""\nz",2'), [['a', 'b'], ['x, "y"\nz', '2']]);
+      same(t('a;b;c\n1,5;2;3'), [['a', 'b', 'c'], ['1,5', '2', '3']]);
+      same(t('sep=|\r\na|b\r\n1|2'), [['a', 'b'], ['1', '2']]);
+    });
+
+    /* files */
+    const asFile = (data, name) => new File([data], name);
+    const readIt = (data, name) => Sim.importer.readFile(asFile(data, name), () => {});
+    const refused = async (data, name) => { try { await readIt(data, name); return 'accepted'; } catch (e) { return e.message; } };
+    test('the Word and Excel templates import', async () => {
+      const w = await readIt(Sim.templates.wordFile(), 'x.docx');
+      same(w.questions.map((q) => q.type), samples().map((q) => q.type));
+      same(w.questions[3].code, samples()[3].code);
+      const x = await readIt(Sim.templates.excelFile(), 'x.xlsx');
+      same(x.questions.map((q) => q.type), ['choice', 'choice', 'choice', 'match', 'order']);
+      same(x.questions.map((q) => q.section), ['Development', 'Integration', 'Development', 'Development', 'Debugging']);
+    });
+    test('file types are judged by contents', async () => {
+      const html = '<html><body><table><tr><th>Question</th><th>A</th><th>B</th><th>Answer</th></tr><tr><td>q</td><td>x</td><td>y</td><td>B</td></tr></table></body></html>';
+      same((await readIt(html, 'report.xls')).questions.map(brief), ['x|*y']);
+      same((await readIt('{\\rtf1 1. First?\\par A. x\\par B. y\\par Answer: B\\par}', 'x.doc')).questions.map(brief), ['x|*y']);
+    });
+    test('hostile and useless files are refused politely', async () => {
+      same(await refused(Sim.zip.write({ '[Content_Types].xml': 'x', '_rels/.rels': '<!DOCTYPE a [<!ENTITY b "c">]><Relationships/>', 'word/document.xml': '<a/>' }), 'x.docx'), 'This file is damaged and cannot be opened.');
+      same(await refused('PK\u0003\u0004 nonsense', 'x.docx'), 'This file is damaged and cannot be opened.');
+      same(await refused('', 'x.txt'), 'This file is empty.');
+      same((await refused('abc', 'x.zip')).slice(0, 35), 'This file type is not supported. Us');
+    });
+    test('web pages run nothing', async () => {
+      const f = await readIt('<p>Question 1</p><p>x<img src=x onerror="window.bad=1"></p><script>window.bad=1<\/script><p>A. a</p><p>B. b</p><p>Answer: A</p>', 'x.html');
+      same([f.questions.length, f.questions[0].stem.length, window.bad], [1, 1, undefined]);
+    });
+
     let failed = 0;
     const out = document.getElementById('out');
-    tests.forEach(([name, fn]) => {
+    (async () => {
+    for (const [name, fn] of tests) {
       const line = document.createElement('div');
       try {
-        fn();
+        await fn();
         line.className = 'ok';
         line.textContent = '✓ ' + name;
       } catch (err) {
@@ -294,8 +408,9 @@
         line.textContent = '✗ ' + name + ': ' + err.message;
       }
       out.append(line);
-    });
+    }
     document.getElementById('sum').textContent = failed ? failed + ' of ' + tests.length + ' checks failed' : 'All ' + tests.length + ' checks passed';
+    })();
   </script>
 </body>
 </html>

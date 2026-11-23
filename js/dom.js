@@ -126,7 +126,11 @@
   }
 
   function download(name, text, type) {
-    const url = URL.createObjectURL(new Blob([text], { type: type }));
+    downloadBlob(name, new Blob([text], { type: type }));
+  }
+
+  function downloadBlob(name, blob) {
+    const url = URL.createObjectURL(blob);
     const a = h('a', { href: url, download: name });
     document.body.append(a);
     a.click();
@@ -141,6 +145,7 @@
     alertBox: alertBox,
     renderBlocks: renderBlocks,
     picture: picture,
-    download: download
+    download: download,
+    downloadBlob: downloadBlob
   };
 })();
