@@ -1,0 +1,43 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>MB-820 Exam Simulator</title>
+  <link rel="stylesheet" href="css/app.css">
+</head>
+<body>
+  <div id="app"></div>
+  <noscript>This simulator needs JavaScript.</noscript>
+  <script>
+    // If anything breaks, say what and where instead of showing a blank page.
+    (function () {
+      function report(text) {
+        var box = document.getElementById('problem');
+        if (!box) {
+          box = document.createElement('div');
+          box.id = 'problem';
+          document.body.prepend(box);
+        }
+        box.textContent = 'Something went wrong: ' + text;
+      }
+      window.addEventListener('error', function (e) {
+        if (e.message) report(e.message + ' (' + String(e.filename).split('/').pop() + ':' + e.lineno + ')');
+      });
+      window.addEventListener('unhandledrejection', function (e) {
+        report(e.reason && e.reason.message ? e.reason.message : String(e.reason));
+      });
+    })();
+  </script>
+  <script src="js/parser.js"></script>
+  <script src="js/pdfread.js"></script>
+  <script src="js/engine.js"></script>
+  <script src="js/store.js"></script>
+  <script src="js/samples.js"></script>
+  <script src="js/dom.js"></script>
+  <script src="js/question.js"></script>
+  <script src="js/calculator.js"></script>
+  <script src="js/importer.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>

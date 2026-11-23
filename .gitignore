@@ -1,0 +1,8 @@
+# Question files, exports and programs never belong in this public repository.
+*.pdf
+*.vce
+*.json
+*.exe
+*.dll
+*.docx
+*.zip

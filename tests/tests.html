@@ -1,0 +1,301 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Simulator checks</title>
+  <style>
+    body { font: 15px/1.5 "Segoe UI", sans-serif; margin: 24px; max-width: 900px; }
+    .ok { color: #17702f; }
+    .bad { color: #a8201a; white-space: pre-wrap; }
+    #sum { font-size: 1.3em; font-weight: 600; }
+  </style>
+</head>
+<body>
+  <h1>Simulator checks</h1>
+  <p id="sum">The checks did not run. A script failed to load.</p>
+  <div id="out"></div>
+  <script src="../js/parser.js"></script>
+  <script src="../js/pdfread.js"></script>
+  <script src="../js/engine.js"></script>
+  <script src="../js/store.js"></script>
+  <script src="../js/samples.js"></script>
+  <script src="../js/dom.js"></script>
+  <script src="../js/question.js"></script>
+  <script src="../js/calculator.js"></script>
+  <script src="../js/importer.js"></script>
+  <script>
+    'use strict';
+    const P = Sim.parser;
+    const E = Sim.engine;
+    const tests = [];
+    const test = (name, fn) => tests.push([name, fn]);
+    const same = (got, want, what) => {
+      const a = JSON.stringify(got);
+      const b = JSON.stringify(want);
+      if (a !== b) throw new Error((what || 'value') + '\n  got  ' + a + '\n  want ' + b);
+    };
+    const parseText = (t) => P.parse(P.textToBlocks(t));
+    const samples = () => parseText(Sim.SAMPLE_TEXT).questions;
+    const withIds = (list) => list.map((q, i) => Object.assign(q, { id: 'A-' + q.num, exam: i < 5 ? 'Exam A' : 'Exam B' }));
+
+    /* parser */
+    test('samples: every question type is recognised', () => {
+      same(samples().map((q) => q.type), ['choice', 'choice', 'match', 'blanks', 'order', 'match', 'match', 'self']);
+    });
+    test('single and multiple answers', () => {
+      const q = samples();
+      same(q[0].answer, ['B']);
+      same(q[1].answer, ['A', 'C']);
+      same(q[1].options.length, 5);
+      same(q[0].options[1].text, 'tableextension');
+    });
+    test('letters can be written together or apart', () => {
+      same(P.parseLetters('AB'), ['A', 'B']);
+      same(P.parseLetters('B, C, E'), ['B', 'C', 'E']);
+      same(P.parseLetters('B and D'), ['B', 'D']);
+      same(P.parseLetters('Both'), null);
+      same(P.parseLetters(','), null);
+    });
+    test('matching uses the listed choices', () => {
+      const q = samples()[2];
+      same(q.rows.map((r) => r.answer), ['app.json', 'launch.json', 'app.json']);
+      same(q.rows[0].options, ['app.json', 'launch.json', 'settings.json']);
+      same(q.stem.some((b) => /Available choices|Match each/.test(b.text)), false, 'list left in question');
+    });
+    test('gaps: choices and code are separated', () => {
+      const q = samples()[3];
+      same(q.rows.map((r) => r.options), [['SetRange', 'SetCurrentKey', 'Validate'], ['Count', 'Next', 'FindSet']]);
+      same(q.code.split('\n')[0], 'procedure CountOpenOrders(CustomerNo: Code[20]): Integer');
+      same((q.code.match(/_{4,}/g) || []).length, 2);
+    });
+    test('ordering keeps the steps', () => same(samples()[4].items.length, 3));
+    test('statements become Yes/No rows', () => {
+      const q = samples()[5];
+      same(q.rows.map((r) => r.answer), ['No', 'Yes', 'Yes']);
+      same(q.rows[0].options, ['Yes', 'No']);
+      same(q.stem.length, 2, 'stem blocks');
+    });
+    test('each prompt gets its own choices', () => {
+      same(samples()[6].rows.map((r) => r.options), [['OnInsert', 'OnModify', 'OnRename'], ['OnInsert', 'OnDelete', 'OnValidate']]);
+    });
+    test('explanations are kept apart from answers', () => {
+      same(samples()[0].explanation.length, 2);
+      same(samples()[3].explanation.length, 1);
+    });
+    test('choices for several gaps are split sensibly', () => {
+      same(P.groupOptions(
+        ['Delete()', 'Init()', 'Insert()', 'Reset()', 'Rename', 'SetFilter', 'SetRange', 'Validate', 'Rename', 'SetFilter', 'SetRange', 'Validate'],
+        ['Reset()', 'SetRange', 'SetFilter']).map((g) => g.length), [4, 4, 4]);
+      same(P.groupOptions(['setA', 'setB', 'Cloud', 'Extension', 'OnPrem'], ['setA', 'Cloud']).map((g) => g.length), [2, 3]);
+    });
+    test('impossible splits fall back to all choices', () => {
+      same(P.groupOptions(['x', 'y'], ['y', 'x']), [['x', 'y'], ['x', 'y']]);
+    });
+    test('picture-only choices still work', () => {
+      const r = P.parse([
+        { k: 'p', text: 'Question: 1' }, { k: 'p', text: 'Which snippet is right?' },
+        { k: 'p', text: 'A.' }, { k: 'p', text: 'B.' }, { k: 'img', ref: 'i1' },
+        { k: 'p', text: 'Question 1 diagram' }, { k: 'p', text: 'Answer: B' }]);
+      const q = r.questions[0];
+      same([q.type, q.answer, q.options.length, q.note], ['choice', ['B'], 2, 'options-in-picture']);
+      same(q.stem.filter((b) => b.t === 'img').length, 1);
+      same(r.report.pictureOptions, [1]);
+    });
+    test('picture answers become check-it-yourself', () => {
+      const r = P.parse([{ k: 'p', text: 'QUESTION 7' }, { k: 'p', text: 'DRAG DROP -' }, { k: 'p', text: 'Arrange it.' },
+        { k: 'p', text: 'Correct Answer:' }, { k: 'img', ref: 'a' }]);
+      same(r.questions[0].type, 'self');
+      same(r.questions[0].solution, [{ t: 'img', ref: 'a' }]);
+      same(r.questions[0].stem.length, 1);
+    });
+    test('bullets before option letters, text after the answer', () => {
+      const r = parseText('QUESTION 1\nPick.\n· A. Yes\n� B. No\nCorrect Answer: B\nBecause it is so.');
+      same(r.questions[0].options.map((o) => o.text), ['Yes', 'No']);
+      same(r.questions[0].explanation, [{ t: 'p', text: 'Because it is so.' }]);
+    });
+    test('a company called A. Datum is not an option', () => {
+      const q = parseText('Question 1\nA. Datum Corporation uses Business Central.\nPick.\nA. One\nB. Two\nAnswer: A').questions[0];
+      same(q.options.map((o) => o.text), ['One', 'Two']);
+      same(q.stem.length, 2);
+    });
+    test('missing numbers are reported', () => {
+      same(parseText('Question 1\nx\nA. a\nB. b\nAnswer: A\nQuestion 4\nx\nA. a\nB. b\nAnswer: B').report.missing, [2, 3]);
+    });
+    test('shared case studies are taken out once', () => {
+      const story = [];
+      for (let i = 0; i < 40; i++) story.push('Paragraph ' + i + ' describes how the company runs its warehouse and orders.');
+      const make = (n, ask) => 'Question ' + n + '\nNorthwind Project\n' + story.join('\n') + '\n' + ask + '\nA. one\nB. two\nAnswer: A\n';
+      const r = parseText(make(1, 'You need to plan.') + make(2, 'You must report.') + make(3, 'Users complain.'));
+      same(r.cases.length, 1);
+      same(r.cases[0].title, 'Northwind Project');
+      same(r.questions.map((q) => q.stem.map((b) => b.text)), [['You need to plan.'], ['You must report.'], ['Users complain.']]);
+      same(r.questions[0].section, 'Northwind Project');
+    });
+
+    /* PDF text */
+    const item = (str, x, y, width) => ({ str, transform: [10, 0, 0, 10, x, y], width });
+    const flip = [1, 0, 0, -1, 0, 800];
+    test('rotated text is dropped', () => {
+      const list = Sim.pdf.uprightItems([item('Hello', 50, 700, 30), { str: 'Mark', transform: [0, 10, -10, 0, 5, 300], width: 40 }], flip);
+      same(list.map((i) => i.str), ['Hello']);
+    });
+    test('wrapped lines join, short lines do not', () => {
+      const page = { index: 0, width: 600, height: 800, rects: [], lines: Sim.pdf.buildLines(Sim.pdf.uprightItems([
+        item('This is a long line that fills the page up to', 50, 700, 450),
+        item('the edge.', 50, 688, 40),
+        item('A new line', 50, 674, 50),
+        item('Another', 50, 660, 35)], flip)) };
+      Sim.pdf.dropRepeated([page]);
+      Sim.pdf.buildParagraphs([page]);
+      same(page.paras.map((p) => p.text), ['This is a long line that fills the page up to the edge.', 'A new line', 'Another']);
+    });
+    test('indents become spaces', () => {
+      const blocks = [{ k: 'p', text: 'begin', x: 50, size: 10, page: 0 }, { k: 'p', text: 'x;', x: 61, size: 10, page: 0 }];
+      Sim.pdf.setIndents(blocks);
+      same(blocks.map((b) => b.indent), [0, 4]);
+    });
+
+    test('indented lines of code stay apart', () => {
+      const page = { index: 0, width: 600, height: 800, lines: Sim.pdf.buildLines(Sim.pdf.uprightItems([
+        item('if not DownloadFromStream(Stream, Title, Filter, FileName) then', 50, 700, 450),
+        item('exit;', 60, 688, 20),
+        item('This long statement reaches the right margin of the page;', 50, 676, 450),
+        item('another one', 50, 664, 50)], flip)) };
+      Sim.pdf.dropRepeated([page]);
+      Sim.pdf.buildParagraphs([page]);
+      same(page.paras.length, 4);
+    });
+    test('sentences inside an answer are separate steps', () => {
+      const page = { index: 0, width: 600, height: 800, lines: Sim.pdf.buildLines(Sim.pdf.uprightItems([
+        item('Answer:', 50, 712, 40),
+        item('The first step is long enough to reach the right margin.', 50, 700, 450),
+        item('Select the second step that also reaches the margin and', 50, 688, 450),
+        item('continues here.', 50, 676, 60)], flip)) };
+      Sim.pdf.dropRepeated([page]);
+      Sim.pdf.buildParagraphs([page]);
+      same(page.paras.map((p) => p.text.slice(0, 10)), ['Answer:', 'The first ', 'Select the']);
+    });
+    test('small print lying across text is removed', () => {
+      const pages = [1, 2, 3, 4].map((n) => ({ width: 600, height: 800, items: Sim.pdf.uprightItems([
+        item('Question text ' + n, 50, 20, 200), item('More text ' + n, 50, 40, 200),
+        { str: 'Seller name', transform: [7, 0, 0, 7, 120, 21], width: 50 }], flip) }));
+      same(Sim.pdf.dropSmallPrint(pages), ['Seller name']);
+      same(pages[0].items.length, 2);
+    });
+    test('a picture beside "Correct Answer:" follows it', () => {
+      const paras = [{ text: 'Correct Answer:', x: 48, y: 785, size: 12 }];
+      same(Sim.pdf.imagePosition({ x: 146, y: 669, w: 309, h: 116 }, paras) > 785, true);
+      same(Sim.pdf.imagePosition({ x: 49, y: 458, w: 482, h: 178 }, paras) < 785, true);
+    });
+    test('pictures are tied to their options', () => {
+      const q = P.parse([{ k: 'p', text: 'Question: 1' }, { k: 'p', text: 'Which one?' },
+        { k: 'p', text: 'A.' }, { k: 'p', text: 'B.' }, { k: 'p', text: 'C.' },
+        { k: 'img', ref: 'w1' }, { k: 'img', ref: 'w2' }, { k: 'p', text: 'Answer: B' }, { k: 'img', ref: 'right' },
+        { k: 'p', text: 'Explanation' }, { k: 'p', text: 'Because.' }]).questions[0];
+      same(q.options.map((o) => o.imgs), [['w1'], ['right'], ['w2']]);
+      same(q.explanation.length, 1);
+      same(q.note, undefined);
+    });
+    test('statements read as one line come apart', () => {
+      const q = parseText('Question 1\nFor each, select Yes if it is true.\nAnswer:\nFirst thing. -- No The second thing. -- Yes\nThird thing.\n-- No').questions[0];
+      same(q.rows.map((r) => [r.prompt, r.answer]), [['First thing.', 'No'], ['The second thing.', 'Yes'], ['Third thing.', 'No']]);
+    });
+    test('the last choice does not leak into the code', () => {
+      const q = parseText('Question 1\nHow should you complete the code?\nOpen\nRead\nClose\nOpen\nRead\nClose\nif Q.________() then\n    Q.________();\nAnswer:\nOpen\nRead').questions[0];
+      same(q.code.split('\n')[0], 'if Q.________() then');
+      same(q.rows.map((r) => r.options), [['Open', 'Read', 'Close'], ['Open', 'Read', 'Close']]);
+    });
+
+    /* engine */
+    test('scoring', () => {
+      const q = withIds(samples());
+      same(E.grade(q[0], ['B']).score, 1);
+      same(E.grade(q[0], ['A']).score, 0);
+      same(E.grade(q[1], ['A']).score, 0.5);
+      same(E.grade(q[1], ['A', 'B']).score, 0);
+      same(E.grade(q[1], ['A', 'C']).correct, true);
+      same(E.grade(q[4], [0, 1, 2]).correct, true);
+      same(E.grade(q[4], [1, 0, 2]).score, 0);
+      same(E.grade(q[4], [1, 0, 2], true).correct, true);
+      same(E.grade(q[7], { mark: 'right' }).correct, true);
+      same(E.outcome(q[2], ['app.json', null, null]), 'partial');
+      same(E.outcome(q[2], undefined), 'unanswered');
+    });
+    test('answered, incomplete and unanswered', () => {
+      const q = withIds(samples());
+      same([E.status(q[1], ['A']), E.status(q[1], ['A', 'C']), E.status(q[1], []), E.status(q[7], { note: 'x' })], ['partial', 'done', 'none', 'partial']);
+    });
+    test('choosing questions', () => {
+      const q = withIds(samples());
+      const n = (cfg, stats) => E.select(q, cfg, stats).length;
+      same(n({ mode: 'exam', exam: 'Exam A' }), 5);
+      same(n({ mode: 'count', count: 3, shuffle: true }), 3);
+      same(E.select(q, { mode: 'range', from: 2, to: 4 }), ['A-2', 'A-3', 'A-4']);
+      same(E.select(q, { mode: 'wrong', wrong: 2 }, { q: { 'A-3': { right: 0, wrong: 2 }, 'A-4': { right: 1, wrong: 1 } } }), ['A-3']);
+      same(n({ mode: 'sections', sections: [] }), 0);
+      same(new Set(E.select(q, { mode: 'exam', exam: 'Exam A', shuffle: true })).size, 5);
+    });
+    test('a whole exam is scored out of 1000', () => {
+      const q = withIds(samples());
+      const byId = new Map(q.map((x) => [x.id, x]));
+      const s = E.newSession('e', { minutes: 120, timerOn: true }, ['A-1', 'A-2'], byId, 0);
+      s.answers['A-1'] = ['B'];
+      s.answers['A-2'] = ['A'];
+      const r = E.score(s, byId, 700);
+      same([r.scaled, r.passed, r.correct, r.partial], [750, true, 1, 1]);
+      same(E.addToStats({ q: {} }, r).q, { 'A-1': { right: 1, wrong: 0 }, 'A-2': { right: 0, wrong: 1 } });
+    });
+    test('time display', () => same([E.formatTime(7200000), E.formatTime(59001), E.formatTime(0)], ['2:00:00', '0:01:00', '0:00:00']));
+    test('calculator', () => {
+      const run = (keys) => { const m = Sim.calculator.machine(); let out; keys.split(' ').forEach((k) => { out = m.press(k); }); return out; };
+      same([run('1 2 + 3 ='), run('2 × 3 + 4 ='), run('1 ÷ 0 ='), run('0 . 1 + 0 . 2 ='), run('9 ± =')], ['15', '10', 'Error', '0.3', '-9']);
+    });
+
+    /* drawing and import */
+    test('every question type can be drawn, locked and revealed', () => {
+      withIds(samples()).forEach((q) => {
+        [false, true].forEach((reveal) => {
+          const el = Sim.question.draw(q, { images: {}, set() {}, reveal, locked: reveal });
+          if (!el.textContent) throw new Error(q.type + ' is empty');
+        });
+      });
+    });
+    test('clicking an option sets the answer', () => {
+      const q = withIds(samples())[1];
+      let got = null;
+      const el = Sim.question.draw(q, { images: {}, set(r) { got = r; } });
+      document.body.append(el); // change events only fire for elements on the page
+      el.querySelector('input[data-key="C"]').click();
+      el.querySelector('input[data-key="A"]').click();
+      el.remove();
+      same(got, ['A', 'C']);
+    });
+    test('uploaded text is never treated as HTML', () => {
+      const q = withIds(parseText('Question 1\n<img src=x onerror=alert(1)>\nA. <b>x</b>\nB. y\nAnswer: A').questions)[0];
+      const el = Sim.question.draw(q, { images: {}, set() {} });
+      same([el.querySelectorAll('img').length, el.querySelectorAll('b').length], [0, 0]);
+    });
+    test('damaged packages are refused', () => {
+      const tryIt = (text) => { try { Sim.importer.readPackage('x.json', text); return 'accepted'; } catch (e) { return 'refused'; } };
+      same([tryIt('{'), tryIt('{"format":"other"}'), tryIt('{"format":"mb820-exam-simulator","questions":[{"type":"choice"}]}')], ['refused', 'refused', 'refused']);
+    });
+
+    let failed = 0;
+    const out = document.getElementById('out');
+    tests.forEach(([name, fn]) => {
+      const line = document.createElement('div');
+      try {
+        fn();
+        line.className = 'ok';
+        line.textContent = '✓ ' + name;
+      } catch (err) {
+        failed++;
+        line.className = 'bad';
+        line.textContent = '✗ ' + name + ': ' + err.message;
+      }
+      out.append(line);
+    });
+    document.getElementById('sum').textContent = failed ? failed + ' of ' + tests.length + ' checks failed' : 'All ' + tests.length + ' checks passed';
+  </script>
+</body>
+</html>
