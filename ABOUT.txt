@@ -1,0 +1,99 @@
+MB-820 SIMULATOR
+================
+
+Open the app: https://cyberspy13.github.io/MB-820-Simulator/
+
+
+WHAT IS IT?
+-----------
+
+After passing the MB-820 exam (Microsoft Dynamics 365 Business Central
+Developer), I decided to create MB-820 Simulator, a free practice exam app
+that runs in your browser.
+
+You import your own practice questions, take them as an exam, and get a score
+report at the end. There is nothing to install and no account to create.
+
+The app comes with 8 original sample questions to try. It does not include a
+question bank.
+
+
+WHAT CAN IT DO?
+---------------
+
+- Import your own questions from PDF, Word, Excel, PowerPoint, CSV and other
+  files
+- Practise single and multiple choice, matching, Yes/No, code completion and
+  ordering questions
+- Take a whole exam, chosen sections, a number of questions, a range, or only
+  the questions you answered incorrectly before
+- Use a timer, or switch it off
+- Use training mode, which checks each answer as you go
+- Skip questions, flag them for review, and show the answer
+- Use the calculator and zoom
+- Save an exam and resume it later
+- Get a score report, then retake the incorrect, unanswered or flagged
+  questions
+
+
+HOW TO START
+------------
+
+To try the samples:
+  1. Open the app and press "Load samples". This button is shown while your
+     library is empty.
+  2. Press "Start exam", choose your options and press "OK".
+  3. Press "Begin".
+
+To use your own questions:
+  1. Press "Upload questions".
+  2. Choose your files, or drop them into the window.
+  3. Open "Check what was read" to make sure the questions look right.
+  4. Press "Add to library".
+  5. Press "Start exam", choose your options and press "OK".
+  6. Press "Begin".
+
+If the app does not find your questions, download the Word, Excel or text
+template from the upload window and copy your questions into it.
+
+
+WHICH FILES CAN I IMPORT?
+-------------------------
+
+- PDF
+- Word (.docx, .doc)
+- Excel (.xlsx, .xls) and CSV
+- PowerPoint (.pptx)
+- OpenDocument (.odt, .ods, .odp)
+- RTF, HTML, TXT and MD
+- Files exported from this simulator (.json)
+
+Not supported: scanned documents, .xlsb, .ppt, and pictures inside old .doc
+and .xls files.
+
+
+WHERE DO MY FILES GO?
+---------------------
+
+Your files are read in your browser and are not uploaded to a server. Your
+questions, results and saved exams are kept in the browser you are using, so
+they do not appear on other devices, and clearing your browser data removes
+them. Use "Export" to keep a copy of your questions.
+
+
+HOW WAS IT MADE?
+----------------
+
+I built it with Claude, using JavaScript, HTML and CSS. It is hosted on GitHub
+Pages. PDF reading uses pdf.js (Apache License 2.0, see vendor/pdfjs/LICENSE).
+
+To run it without a website, download this repository and open index.html.
+
+
+PLEASE NOTE
+-----------
+
+This app is not affiliated with or endorsed by Microsoft. Only import material
+you have the right to use.
+
+Feedback is welcome: https://github.com/cyberspy13/MB-820-Simulator/issues
